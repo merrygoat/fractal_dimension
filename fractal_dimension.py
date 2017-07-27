@@ -2,23 +2,67 @@ from PIL import Image
 import numpy as np
 from glob import glob
 import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
+
+def plot_smooth(x,y,style):
+    def powerlaw(x,b,c):
+        return b*x**c
+    xnew = np.linspace(x.min(),x.max(),300)
+    popt,pcov=curve_fit(powerlaw, x, y, p0=(1,2))
+    plt.plot(xnew,powerlaw(xnew, *popt), style, lw=0.3)
+    return(popt)
 
 def main():
     image_directory = "C:/Users/Peter/Documents/GitHub/fractal_dimension/images/"
     file_prefix = "slice"
     file_suffix = ".png"
     num_images = 0
+    num_boxes = 25
+    threshold = 10  # Average pixel value for which a box is considered filled.
     
-    num_files, image_size = setup_load_images(num_images, image_directory, file_prefix, file_suffix)
-    image_data = np.zeros((num_files, image_size[0], image_size[1]))
+    image_size = setup_load_images(num_images, image_directory, file_prefix, file_suffix)
+    image_data = np.zeros((image_size[2], image_size[0], image_size[1]))
     
-    for i in range(num_files):
-            tmp_image = Image.open(image_directory + file_prefix + str(i) + file_suffix)
-            if tmp_image.mode == "RGB":
-                tmp_image = tmp_image.convert(mode='L')
-            image_data[i] = np.array(tmp_image.copy())
+    for i in range(image_size[2]):
+        tmp_image = Image.open(image_directory + file_prefix + str(i) + file_suffix)
+        if tmp_image.mode == "RGB":
+            tmp_image = tmp_image.convert(mode='L')
+        image_data[i] = np.array(tmp_image.copy())
     
+    dimensions = []
+    
+    for box_size in range(2, num_boxes):
+        dimensions.append(count_boxes(image_data, box_size, image_size, threshold))
+    
+    plt.loglog(np.arange(2, num_boxes), dimensions, 'x')
+    gradient = plot_smooth(np.arange(2, num_boxes), dimensions, '-k')
+    plt.xlabel("magnification")
+    plt.ylabel("filled boxes")
+    plt.text(5,10, "Fractal dimension = " + '{:1.2f}'.format(gradient[1]))
+    plt.show()
+    np.savetxt("fractal_dimension.txt", dimensions)
+        
+def count_boxes(image_data, box_size, image_size, threshold):
+    box_x_size = int(image_size[0]/box_size)
+    box_y_size = int(image_size[1]/box_size)
+    box_z_size = int(image_size[2]/box_size)
+    filled_boxes = 0
+    total_boxes = 0
+    
+    for x_box_num in range(0, box_size):
+        for y_box_num in range(0, box_size):
+            for z_box_num in range(0, box_size):
+                x_min = x_box_num * box_x_size
+                x_max = ((x_box_num + 1) * box_x_size)-1
+                y_min = y_box_num * box_y_size
+                y_max = (y_box_num + 1) * box_y_size
+                z_min = z_box_num * box_z_size
+                z_max = (z_box_num + 1) * box_z_size
+                if np.average(image_data[z_min:z_max, x_min:x_max, y_min:y_max]) < 256-threshold:
+                    filled_boxes += 1
 
+    return filled_boxes
+                    
 
 def setup_load_images(num_images, image_directory, file_prefix, file_suffix):
     if num_images == 0:
@@ -31,7 +75,8 @@ def setup_load_images(num_images, image_directory, file_prefix, file_suffix):
         num_files = num_images
 
     image_size = Image.open(image_directory + file_prefix + '0' + file_suffix).size
-        
-    return num_files, image_size
+    image_size = [image_size[0], image_size[1], num_files]
+   
+    return image_size
 	
 main()
